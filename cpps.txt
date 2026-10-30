@@ -1,32 +1,11 @@
-// dsl: 14
-// 用法：?url=...&key=m%20n
-//   例：?key=3%202      → 3^2=9
-//       ?key=9%200.5    → 9^0.5=3
-//       ?key=-2%203     → -2^3=-8
-//       ?key=3%20%202   → 多空格也认（m=3, n=2）
-
 auto main() {
-    string raw = q_get("key");      // 原始字符串，不碰只读的 key
-    if (raw == "") {
-        out("missing ?key=, format: m n\n");
-        return;
-    }
-
-    // 严格校验：整个串必须恰好是「数字 空格 数字」
+    string raw = q_get("key");
+    if (raw == "") { out("missing ?key=\n"); return; }
+    raw = replace(raw, "^", " ");
     string chk = regex(raw, "^ *([+-]?[0-9]+([.][0-9]+)?) +([+-]?[0-9]+([.][0-9]+)?) *$");
-    if (chk == "") {
-        out("bad format, expect: m n\n");
-        return;
-    }
-
-    // 从头取 m，从尾取 n
-    string mStr = regex(raw, "^ *([+-]?[0-9]+([.][0-9]+)?)");
-    string nStr = regex(raw, "([+-]?[0-9]+([.][0-9]+)?) *$");
-
-    number m = to_num(mStr);
-    number n = to_num(nStr);
-    number r = pow(m, n);
-
-    out(to_str(m) + "^" + to_str(n) + "=" + to_str(r) + "\n");
+    if (chk == "") { out("bad format, expect: m^n\n"); return; }
+    number m = to_num(regex(raw, "^ *([+-]?[0-9]+([.][0-9]+)?)"));
+    number n = to_num(regex(raw, "([+-]?[0-9]+([.][0-9]+)?) *$"));
+    out(to_str(m) + "^" + to_str(n) + "=" + to_str(pow(m, n)) + "\n");
     return;
 }
