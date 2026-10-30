@@ -1,0 +1,22 @@
+auto main() {
+    string j = get("https://product-details.mozilla.org/1.0/mobile_versions.json")
+               with UA "CppScript/14";
+
+    if (status() != 200) {
+        return with 502;
+    }
+
+    string ver = json_str(j, "$.version");
+    if (ver == "") {
+        return with 502;
+    }
+
+    // 官方路径：
+    // /pub/fenix/releases/{ver}/android/fenix-{ver}-android-arm64-v8a/fenix-{ver}.multi.android-arm64-v8a.apk
+    string apk =
+        "https://archive.mozilla.org/pub/fenix/releases/" + ver +
+        "/android/fenix-" + ver + "-android-arm64-v8a/" +
+        "fenix-" + ver + ".multi.android-arm64-v8a.apk";
+
+    return apk with 302;
+}
