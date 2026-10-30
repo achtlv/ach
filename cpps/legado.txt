@@ -1,11 +1,15 @@
+// dsl: 14
+// 蓝奏文件夹：最新文件直链并跳转
+// https://miaogongzi.lanzout.com/b01rgkhhe
+
 auto main() {
-    string UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     string base = "https://miaogongzi.lanzout.com";
     string share = base + "/b01rgkhhe";
 
     // 1) 分享页
     string html = get(share)
-                  with UA UA
+                  with UA userAgent
                   with header { "Accept": "text/html" };
     if (status() != 200) {
         return with 502;
@@ -20,7 +24,7 @@ auto main() {
         return with 502;
     }
 
-    // 2) 文件列表（第 1 条一般是最新）
+    // 2) 文件列表（第 1 条为最新）
     string form =
         "lx=2&fid=" + fid +
         "&uid=" + uid +
@@ -30,7 +34,7 @@ auto main() {
         "&webfoldersign=";
 
     string list = post(base + "/filemoreajax.php?file=" + fid, form)
-                  with UA UA
+                  with UA userAgent
                   with header {
                       "Content-Type": "application/x-www-form-urlencoded",
                       "Referer": share
@@ -46,13 +50,9 @@ auto main() {
         return with 404;
     }
 
-    // 可选：按文件名过滤（例如只要带 releaseA 的）
-    // string want = q_get("name");
-    // if (want != "" && !contains(fname, want)) { ... 遍历 text[i] ... }
-
     // 3) 文件页 → iframe
     string page = get(base + "/" + fileId)
-                  with UA UA
+                  with UA userAgent
                   with header { "Referer": share };
     string fn = regex(page, "src=\"(/fn\\?[^\"]+)\"");
     if (fn == "") {
@@ -61,7 +61,7 @@ auto main() {
 
     // 4) iframe → sign / ajax 域名
     string iframe = get(base + fn)
-                    with UA UA
+                    with UA userAgent
                     with header { "Referer": base + "/" + fileId };
 
     string wp_sign  = regex(iframe, "var wp_sign = '([^']+)'");
@@ -82,7 +82,7 @@ auto main() {
         "&websign=&kd=0&ves=1";
 
     string dl = post(domain2, postBody)
-                with UA UA
+                with UA userAgent
                 with header {
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Referer": base + "/"
@@ -94,6 +94,6 @@ auto main() {
         return with 502;
     }
 
-    // 6) 跳转真实下载地址（临时直链，有效期短）
+    // 6) 跳转
     return dom + "/file/" + path with 302;
 }
