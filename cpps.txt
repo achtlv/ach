@@ -1,0 +1,5 @@
+void main() {
+    number n = to_num(key);
+    out("key is: " + to_str(n) + "\n");
+    out("2^key = " + to_str(pow(2, n)) + "\n");
+}
