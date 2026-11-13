@@ -1,19 +1,40 @@
 // dsl: 14
 
 auto main() {
-    // 获取参数：搜索词和平台
-    string kw = q_get("kw");
-    string cmd = q_get("cmd");
-
-    if (kw == "") {
-        out("请提供搜索词。用法: ?cmd=wy&kw=晴天 或 ?cmd=qq&kw=稻香\n");
+    // 初始化变量，防止空输入导致 E36 未初始化报错
+    string cmd = "";
+    string kw = "";
+    string word = "";
+    
+    // 从输入流读取第一个词作为命令
+    in(cmd);
+    
+    // 循环读取剩余的词，拼接到 kw 中，以支持带空格的歌名
+    while (true) {
+        word = "";
+        in(word);
+        if (word == "") {
+            break;
+        }
+        if (kw == "") {
+            kw = word;
+        } else {
+            kw = kw + " " + word;
+        }
+    }
+    
+    // 校验参数
+    if (cmd == "" || kw == "") {
+        out("用法: 请通过输入流 (in) 提供参数，格式: <平台命令> <搜索词>\n");
+        out("示例: wy 晴天\n");
+        out("      qq 周杰伦 稻香\n");
         return;
     }
 
     // URL 编码搜索词
     string encoded_kw = urlencode(kw);
     
-    // 跨域代理（纯前端环境必备，Worker 环境会自动忽略或加速）
+    // 跨域代理（在纯前端环境下用于绕过 CORS，Worker 环境会自动忽略）
     string proxy_url = "https://corsproxy.io/?";
 
     if (cmd == "wy") {
@@ -23,7 +44,6 @@ auto main() {
         string search_url = "https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=" + encoded_kw + "&count=1&pages=1";
         string res = get(search_url) with proxy proxy_url;
         
-        // 用正则提取 id（比 JSON 路径对顶层数组的兼容性更好）
         string id = regex(res, "\"id\":([0-9]+)");
         
         if (id == "") {
@@ -33,7 +53,6 @@ auto main() {
         
         out("找到歌曲 ID: " + id + "，正在解析 320k...\n");
         
-        // 解析 320k (GD Studio)
         string parse_url = "https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=" + id + "&br=320";
         string parse_res = get(parse_url) with proxy proxy_url;
         string url = json_str(parse_res, "$.url");
@@ -58,7 +77,6 @@ auto main() {
         string search_url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=" + encoded_kw + "&format=json&n=1&p=1&cr=1&aggr=1&flag_qc=0&remoteplace=txt.yqq.song&t=0&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0";
         string res = get(search_url) with proxy proxy_url;
         
-        // 提取 songmid
         string songmid = regex(res, "\"songmid\":\"([^\"]+)\"");
         
         if (songmid == "") {
@@ -68,7 +86,6 @@ auto main() {
         
         out("找到 songmid: " + songmid + "，正在解析 320k...\n");
         
-        // 解析 320k (Huibq，需要特定的 Header)
         string parse_url = "https://lxmusicapi.onrender.com/url/tx/" + songmid + "/320k";
         string parse_res = get(parse_url) with proxy proxy_url with header {
             "X-Request-Key": "share-v3",
@@ -83,6 +100,6 @@ auto main() {
             out("❌ 解析失败：接口限流或缺少版权。\n");
         }
     } else {
-        out("未知命令。请使用 ?cmd=wy 或 ?cmd=qq\n");
+        out("未知命令: " + cmd + "\n请使用 wy 或 qq\n");
     }
 }
