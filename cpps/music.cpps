@@ -1,0 +1,88 @@
+// dsl: 14
+
+auto main() {
+    // 获取参数：搜索词和平台
+    string kw = q_get("kw");
+    string cmd = q_get("cmd");
+
+    if (kw == "") {
+        out("请提供搜索词。用法: ?cmd=wy&kw=晴天 或 ?cmd=qq&kw=稻香\n");
+        return;
+    }
+
+    // URL 编码搜索词
+    string encoded_kw = urlencode(kw);
+    
+    // 跨域代理（纯前端环境必备，Worker 环境会自动忽略或加速）
+    string proxy_url = "https://corsproxy.io/?";
+
+    if (cmd == "wy") {
+        // === 网易云解析 ===
+        out("正在搜索网易云: " + kw + " ...\n");
+        
+        string search_url = "https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=" + encoded_kw + "&count=1&pages=1";
+        string res = get(search_url) with proxy proxy_url;
+        
+        // 用正则提取 id（比 JSON 路径对顶层数组的兼容性更好）
+        string id = regex(res, "\"id\":([0-9]+)");
+        
+        if (id == "") {
+            out("未找到歌曲。\n");
+            return;
+        }
+        
+        out("找到歌曲 ID: " + id + "，正在解析 320k...\n");
+        
+        // 解析 320k (GD Studio)
+        string parse_url = "https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=" + id + "&br=320";
+        string parse_res = get(parse_url) with proxy proxy_url;
+        string url = json_str(parse_res, "$.url");
+        
+        // 备用接口：星海
+        if (url == "") {
+            string xy_url = "https://yy.zddyr.top/lx/api/?source=wy&songmid=" + id + "&quality=320k";
+            string xy_res = get(xy_url) with proxy proxy_url;
+            url = json_str(xy_res, "$.url");
+        }
+        
+        if (url != "") {
+            out("✅ 320k 播放链接:\n" + url + "\n");
+        } else {
+            out("❌ 解析失败：该歌曲可能无 320k 免费版权。\n");
+        }
+        
+    } else if (cmd == "qq") {
+        // === QQ 音乐解析 ===
+        out("正在搜索 QQ 音乐: " + kw + " ...\n");
+        
+        string search_url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=" + encoded_kw + "&format=json&n=1&p=1&cr=1&aggr=1&flag_qc=0&remoteplace=txt.yqq.song&t=0&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0";
+        string res = get(search_url) with proxy proxy_url;
+        
+        // 提取 songmid
+        string songmid = regex(res, "\"songmid\":\"([^\"]+)\"");
+        
+        if (songmid == "") {
+            out("未找到歌曲。\n");
+            return;
+        }
+        
+        out("找到 songmid: " + songmid + "，正在解析 320k...\n");
+        
+        // 解析 320k (Huibq，需要特定的 Header)
+        string parse_url = "https://lxmusicapi.onrender.com/url/tx/" + songmid + "/320k";
+        string parse_res = get(parse_url) with proxy proxy_url with header {
+            "X-Request-Key": "share-v3",
+            "User-Agent": "lx-music-desktop/2.10.0"
+        };
+        
+        string url = json_str(parse_res, "$.url");
+        
+        if (url != "") {
+            out("✅ 320k 播放链接:\n" + url + "\n");
+        } else {
+            out("❌ 解析失败：接口限流或缺少版权。\n");
+        }
+    } else {
+        out("未知命令。请使用 ?cmd=wy 或 ?cmd=qq\n");
+    }
+}
