@@ -1,0 +1,169 @@
+// dsl: 14
+// 蓝奏文件夹：最新文件直链（手动跳转版）
+
+auto main() {
+    string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    string base = "https://miaogongzi.lanzout.com";
+    string share = base + "/b01rgkhhe";
+
+    out("[1/6] 正在请求分享页: " + share + " ...\n");
+    string html = "";
+    try {
+        html = get(share)
+               with UA userAgent
+               with header { 
+                   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                   "Sec-Fetch-Dest": "document",
+                   "Sec-Fetch-Mode": "navigate",
+                   "Sec-Fetch-Site": "none",
+                   "Upgrade-Insecure-Requests": "1"
+               }
+               with worker;
+    } catch (e) {
+        out("❌ [1/6] 网络异常被强行断开。\n");
+        return;
+    }
+
+    if (status() != 200) {
+        out("❌ [1/6] 状态码异常: " + to_str(status()) + "\n");
+        return;
+    }
+    out("✅ [1/6] 分享页获取成功。\n");
+
+    // 2) 提取参数
+    string tVarName = regex(html, "'t'\\s*:\\s*([a-zA-Z0-9_]+)\\s*,");
+    string kVarName = regex(html, "'k'\\s*:\\s*([a-zA-Z0-9_]+)\\s*,");
+
+    string t = "";
+    string k = "";
+    if (tVarName != "") t = regex(html, tVarName + "\\s*=\\s*'([^']+)'");
+    if (kVarName != "") k = regex(html, kVarName + "\\s*=\\s*'([^']+)'");
+    if (t == "") t = regex(html, "var ibm0zt = '([^']+)'");
+    if (k == "") k = regex(html, "var _hkd1m = '([^']+)'");
+
+    string fid  = regex(html, "'fid'\\s*:\\s*([0-9]+)");
+    string uid  = regex(html, "'uid'\\s*:\\s*'([^']+)'");
+    string puid = regex(html, "'puid'\\s*:\\s*'([^']+)'");
+
+    if (t == "" || k == "" || fid == "") {
+        out("❌ [2/6] 关键参数提取失败。\n");
+        return;
+    }
+    out("✅ [2/6] 参数提取成功。\n");
+
+    // 3) 获取文件列表
+    out("[3/6] 正在获取文件列表...\n");
+    string form = "lx=2&fid=" + fid + "&uid=" + uid + "&pg=1&rep=0&t=" + t + "&k=" + k + "&up=1&ls=1&puid=" + puid;
+    string fileList = "";
+    try {
+        fileList = post(base + "/filemoreajax.php?file=" + fid, form)
+                   with UA userAgent
+                   with header {
+                       "Content-Type": "application/x-www-form-urlencoded",
+                       "Referer": share,
+                       "X-Requested-With": "XMLHttpRequest",
+                       "Accept": "application/json, text/javascript, */*; q=0.01"
+                   }
+                   with worker;
+    } catch (e) {
+        out("❌ [3/6] 请求文件列表时网络中断。\n");
+        return;
+    }
+
+    if (json_num(fileList, "$.zt") != 1) {
+        out("❌ [3/6] 获取文件列表失败。\n");
+        return;
+    }
+
+    string fileId = json_str(fileList, "$.text[0].id");
+    if (fileId == "") {
+        out("❌ [3/6] 文件列表为空。\n");
+        return;
+    }
+    out("✅ [3/6] 找到最新文件。\n");
+
+    // 4) 获取详情页
+    out("[4/6] 正在请求文件详情页...\n");
+    string detailUrl = base + "/" + fileId;
+    string page = "";
+    try {
+        page = get(detailUrl)
+               with UA userAgent
+               with header {
+                   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                   "Referer": share
+               }
+               with worker;
+    } catch (e) {
+        out("❌ [4/6] 请求详情页时网络中断。\n");
+        return;
+    }
+
+    if (status() != 200) {
+        out("❌ [4/6] 获取详情页失败。\n");
+        return;
+    }
+    out("✅ [4/6] 详情页获取成功。\n");
+
+    // 5) 获取直链
+    string fn = regex(page, "src=\"(/fn\\?[^\"]+)\"");
+    if (fn == "") {
+        out("❌ [5/6] 详情页中未找到 iframe 链接。\n");
+        return;
+    }
+    
+    out("[5/6] 正在请求 iframe 验证页面...\n");
+    string iframe = "";
+    try {
+        iframe = get(base + fn)
+                 with UA userAgent
+                 with header { "Referer": detailUrl }
+                 with worker;
+    } catch (e) {
+        out("❌ [5/6] 请求 iframe 时网络中断。\n");
+        return;
+    }
+
+    string wp_sign  = regex(iframe, "var wp_sign = '([^']+)'");
+    string ajaxdata = regex(iframe, "var ajaxdata = '([^']+)'");
+    string domain2  = regex(iframe, "var domain2 = '([^']+)'");
+    
+    if (wp_sign == "" || domain2 == "") {
+        out("❌ [5/6] 无法从 iframe 中提取解析参数。\n");
+        return;
+    }
+    if (ajaxdata == "") ajaxdata = "YiQi";
+
+    out("[6/6] 正在向 API 申请最终直链...\n");
+    string postBody = "action=downprocess&websignkey=" + ajaxdata + "&signs=" + ajaxdata + "&sign=" + wp_sign + "&websign=&kd=0&ves=1";
+    string dl = "";
+    try {
+        dl = post(domain2, postBody)
+             with UA userAgent
+             with header {
+                 "Content-Type": "application/x-www-form-urlencoded",
+                 "Referer": base + "/"
+             }
+             with worker;
+    } catch (e) {
+        out("❌ [6/6] 请求直链接口时网络中断。\n");
+        return;
+    }
+
+    string dom = json_str(dl, "$.dom");
+    string path = json_str(dl, "$.url");
+    if (dom == "" || path == "") {
+        out("❌ [6/6] 直链接口返回异常。\n");
+        return;
+    }
+
+    string directUrl = dom + "/file/" + path;
+    directUrl = replace(directUrl, "&amp;", "&");
+    
+    out("🎉 解析成功！\n");
+    out("🔗 直链: " + directUrl + "\n");
+    
+    // 👇 核心修改：加入 with confirm，弹窗等待用户选择复制或跳转
+    return directUrl with 302 with confirm;
+}
