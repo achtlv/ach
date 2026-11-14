@@ -3,7 +3,7 @@ auto main() {
     string base = "https://miaogongzi.lanzout.com";
     string share = base + "/b01rgkhhe";
 
-    out("[1/6] 正在请求分享页: " + share + " ...\n");
+    out("[1/6] 正在请求分享页...\n");
     string html = "";
     try {
         html = get(share)
@@ -18,14 +18,10 @@ auto main() {
                }
                with worker;
     } catch (e) {
-        out("❌ [1/6] 网络异常被强行断开。\n");
+        out("❌ [1/6] 分享页请求异常。\n");
         return;
     }
-
-    if (status() != 200) {
-        out("❌ [1/6] 状态码异常: " + to_str(status()) + "\n");
-        return;
-    }
+    if (status() != 200) { out("❌ [1/6] 状态码异常。\n"); return; }
     out("✅ [1/6] 分享页获取成功。\n");
 
     // 2) 提取参数
@@ -43,117 +39,124 @@ auto main() {
     string uid  = regex(html, "'uid'\\s*:\\s*'([^']+)'");
     string puid = regex(html, "'puid'\\s*:\\s*'([^']+)'");
 
-    if (t == "" || k == "" || fid == "") {
-        out("❌ [2/6] 关键参数提取失败。\n");
-        return;
-    }
+    if (t == "" || k == "" || fid == "") { out("❌ [2/6] 参数提取失败。\n"); return; }
     out("✅ [2/6] 参数提取成功。\n");
 
     // 3) 获取文件列表
     out("[3/6] 正在获取文件列表...\n");
     string form = "lx=2&fid=" + fid + "&uid=" + uid + "&pg=1&rep=0&t=" + t + "&k=" + k + "&up=1&ls=1&puid=" + puid;
     string fileList = "";
-    try {
-        fileList = post(base + "/filemoreajax.php?file=" + fid, form)
-                   with UA userAgent
-                   with header {
-                       "Content-Type": "application/x-www-form-urlencoded",
-                       "Referer": share,
-                       "X-Requested-With": "XMLHttpRequest",
-                       "Accept": "application/json, text/javascript, */*; q=0.01"
-                   }
-                   with worker;
-    } catch (e) {
-        out("❌ [3/6] 请求文件列表时网络中断。\n");
-        return;
+    number retry3 = 3;
+    bool success3 = false;
+    
+    while (retry3 > 0) {
+        try {
+            fileList = post(base + "/filemoreajax.php?file=" + fid, form)
+                       with UA userAgent
+                       with header {
+                           "Content-Type": "application/x-www-form-urlencoded",
+                           "Referer": share,
+                           "X-Requested-With": "XMLHttpRequest"
+                       }
+                       with worker;
+            if (json_num(fileList, "$.zt") == 1) { success3 = true; break; }
+        } catch (e) {}
+        retry3--;
+        if (retry3 > 0) { out("⚠️ [3/6] 网络中断，重试中...\n"); sleep(1000); }
     }
-
-    if (json_num(fileList, "$.zt") != 1) {
-        out("❌ [3/6] 获取文件列表失败。\n");
-        return;
-    }
-
+    if (!success3) { out("❌ [3/6] 获取文件列表失败。\n"); return; }
+    
     string fileId = json_str(fileList, "$.text[0].id");
-    if (fileId == "") {
-        out("❌ [3/6] 文件列表为空。\n");
-        return;
-    }
+    if (fileId == "") { out("❌ [3/6] 文件列表为空。\n"); return; }
     out("✅ [3/6] 找到最新文件。\n");
 
-    // 4) 获取详情页
+    // 👇 加上延迟，防止频繁请求触发 WAF
+    sleep(800);
+
+    // 4) 获取详情页（带重试）
     out("[4/6] 正在请求文件详情页...\n");
     string detailUrl = base + "/" + fileId;
     string page = "";
-    try {
-        page = get(detailUrl)
-               with UA userAgent
-               with header {
-                   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                   "Referer": share
-               }
-               with worker;
-    } catch (e) {
-        out("❌ [4/6] 请求详情页时网络中断。\n");
-        return;
+    number retry4 = 3;
+    bool success4 = false;
+    
+    while (retry4 > 0) {
+        try {
+            page = get(detailUrl)
+                   with UA userAgent
+                   with header {
+                       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                       "Referer": share
+                   }
+                   with worker;
+            if (status() == 200 && contains(page, "iframe")) {
+                success4 = true; break;
+            }
+        } catch (e) {}
+        retry4--;
+        if (retry4 > 0) { out("⚠️ [4/6] 网络中断，重试中...\n"); sleep(1000); }
     }
-
-    if (status() != 200) {
-        out("❌ [4/6] 获取详情页失败。\n");
-        return;
-    }
+    if (!success4) { out("❌ [4/6] 获取详情页失败（可能被拦截或页面变更）。\n"); return; }
     out("✅ [4/6] 详情页获取成功。\n");
 
-    // 5) 获取直链
+    // 5) 获取 iframe（带重试）
     string fn = regex(page, "src=\"(/fn\\?[^\"]+)\"");
-    if (fn == "") {
-        out("❌ [5/6] 详情页中未找到 iframe 链接。\n");
-        return;
-    }
+    if (fn == "") { out("❌ [5/6] 未找到 iframe 链接。\n"); return; }
     
-    out("[5/6] 正在请求 iframe 验证页面...\n");
+    out("[5/6] 正在请求验证页...\n");
     string iframe = "";
-    try {
-        iframe = get(base + fn)
-                 with UA userAgent
-                 with header { "Referer": detailUrl }
-                 with worker;
-    } catch (e) {
-        out("❌ [5/6] 请求 iframe 时网络中断。\n");
-        return;
+    number retry5 = 3;
+    bool success5 = false;
+    
+    while (retry5 > 0) {
+        try {
+            iframe = get(base + fn)
+                     with UA userAgent
+                     with header { "Referer": detailUrl }
+                     with worker;
+            if (status() == 200) { success5 = true; break; }
+        } catch (e) {}
+        retry5--;
+        if (retry5 > 0) { out("⚠️ [5/6] 网络中断，重试中...\n"); sleep(800); }
     }
+    if (!success5) { out("❌ [5/6] 请求 iframe 失败。\n"); return; }
 
     string wp_sign  = regex(iframe, "var wp_sign = '([^']+)'");
     string ajaxdata = regex(iframe, "var ajaxdata = '([^']+)'");
     string domain2  = regex(iframe, "var domain2 = '([^']+)'");
     
-    if (wp_sign == "" || domain2 == "") {
-        out("❌ [5/6] 无法从 iframe 中提取解析参数。\n");
-        return;
-    }
+    if (wp_sign == "" || domain2 == "") { out("❌ [5/6] 无法提取解析参数。\n"); return; }
     if (ajaxdata == "") ajaxdata = "YiQi";
 
+    // 👇 再次延迟
+    sleep(800);
+
+    // 6) 申请最终直链（带重试）
     out("[6/6] 正在向 API 申请最终直链...\n");
     string postBody = "action=downprocess&websignkey=" + ajaxdata + "&signs=" + ajaxdata + "&sign=" + wp_sign + "&websign=&kd=0&ves=1";
     string dl = "";
-    try {
-        dl = post(domain2, postBody)
-             with UA userAgent
-             with header {
-                 "Content-Type": "application/x-www-form-urlencoded",
-                 "Referer": base + "/"
-             }
-             with worker;
-    } catch (e) {
-        out("❌ [6/6] 请求直链接口时网络中断。\n");
-        return;
+    number retry6 = 3;
+    bool success6 = false;
+    
+    while (retry6 > 0) {
+        try {
+            dl = post(domain2, postBody)
+                 with UA userAgent
+                 with header {
+                     "Content-Type": "application/x-www-form-urlencoded",
+                     "Referer": base + "/"
+                 }
+                 with worker;
+            if (json_str(dl, "$.dom") != "") { success6 = true; break; }
+        } catch (e) {}
+        retry6--;
+        if (retry6 > 0) { out("⚠️ [6/6] 网络中断，重试中...\n"); sleep(1000); }
     }
+    if (!success6) { out("❌ [6/6] 申请直链失败。\n"); return; }
 
     string dom = json_str(dl, "$.dom");
     string path = json_str(dl, "$.url");
-    if (dom == "" || path == "") {
-        out("❌ [6/6] 直链接口返回异常。\n");
-        return;
-    }
+    if (dom == "" || path == "") { out("❌ [6/6] 返回数据异常。\n"); return; }
 
     string directUrl = dom + "/file/" + path;
     directUrl = replace(directUrl, "&amp;", "&");
@@ -161,6 +164,6 @@ auto main() {
     out("🎉 解析成功！\n");
     out("🔗 直链: " + directUrl + "\n");
     
-    // 👇 核心修改：加入 with confirm，弹窗等待用户选择复制或跳转
+    // 手动确认跳转
     return directUrl with 302 with confirm;
 }
