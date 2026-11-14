@@ -1,13 +1,27 @@
 auto main() {
+    // ================== 1. 输出欢迎和说明 ==================
+    out("========================================\n");
+    out("🎵 欢迎使用全平台音乐解析 CLI\n");
+    out("支持命令: wy(网易云), qq(QQ音乐), kg(酷狗), kw(酷我)\n");
+    out("格式: <平台命令> <完整搜索词>\n");
+    out("示例: wy 万能青年旅店\n");
+    out("      kw 山海\n");
+    out("========================================\n");
+    
+    // 👇 这段文字作为输入前的提示
+    out("请输入命令 > ");
+
+    // ================== 2. 读取用户输入 ==================
     string cmd = "";
     in(cmd);
     
+    // 如果用户直接点了“完成”或没输入，则退出
     if (cmd == "") {
-        out("欢迎使用音乐解析 CLI。\n支持: wy(网易云), qq(QQ音乐), kg(酷狗), kw(酷我)\n格式: wy 万能青年旅店\n");
+        out("\n❌ 未输入任何命令，程序退出。\n");
         return;
     }
     
-    // 循环拼接搜索词，支持带空格的完整歌名
+    // 循环拼接搜索词，保留空格并过滤 EOF
     string kw = "";
     string part = "";
     in(part);
@@ -21,13 +35,16 @@ auto main() {
     }
     
     if (kw == "") {
-        out("❌ 未提供搜索词。\n");
+        out("\n❌ 未提供搜索词，程序退出。\n");
         return;
     }
 
     string encoded_kw = urlencode(kw);
+    out("\n========================================\n");
 
-    // ================== 网易云 (wy) ==================
+    // ================== 3. 开始解析 ==================
+    
+    // ------------------ 网易云 (wy) ------------------
     if (cmd == "wy") {
         out("[1/3] 正在搜索网易云: " + kw + " ...\n");
         string search_url = "https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=" + encoded_kw + "&count=1&pages=1";
@@ -68,22 +85,19 @@ auto main() {
             for (number i = 0; i < responses.size(); i++) {
                 string r = responses[i];
                 string u = json_str(r, "$.url");
-                if (u == "") {
-                    u = regex(r, "\"url\":\"([^\"]+)\"");
-                }
+                if (u == "") u = regex(r, "\"url\":\"([^\"]+)\"");
                 if (u != "") {
                     u = replace(u, "\\/", "/");
                     u = replace(u, "http://", "https://");
-                    out("[3/3] ✅ 解析成功！准备手动跳转。\n");
-                    out("链接: " + u + "\n");
-                    return u with 302 with confirm;
+                    out("[3/3] ✅ 解析成功！1.5 秒后自动跳转...\n");
+                    return u with 302;
                 }
             }
         }
-        out("❌ 网易云解析失败：所有接口均未返回有效链接。\n");
+        out("❌ 网易云解析失败：未返回有效链接。\n");
         return;
         
-    // ================== QQ 音乐 (qq) ==================
+    // ------------------ QQ 音乐 (qq) ------------------
     } else if (cmd == "qq") {
         out("[1/3] 正在搜索 QQ 音乐: " + kw + " ...\n");
         string search_url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=" + encoded_kw + "&format=json&n=1&p=1&cr=1&aggr=1&flag_qc=0&remoteplace=txt.yqq.song&t=0&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0";
@@ -126,15 +140,14 @@ auto main() {
         } else if (url != "") {
             url = replace(url, "\\/", "/");
             url = replace(url, "http://", "https://");
-            out("[3/3] ✅ 解析成功！准备手动跳转。\n");
-            out("链接: " + url + "\n");
-            return url with 302 with confirm;
+            out("[3/3] ✅ 解析成功！1.5 秒后自动跳转...\n");
+            return url with 302;
         } else {
             out("❌ QQ音乐解析失败：返回数据中未找到 url。\n");
             return;
         }
 
-    // ================== 酷狗音乐 (kg) ==================
+    // ------------------ 酷狗音乐 (kg) ------------------
     } else if (cmd == "kg") {
         out("[1/3] 正在搜索酷狗音乐: " + kw + " ...\n");
         string search_url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=" + encoded_kw + "&page=1&pagesize=1&showtype=1";
@@ -176,15 +189,14 @@ auto main() {
         if (url != "") {
             url = replace(url, "\\/", "/");
             url = replace(url, "http://", "https://");
-            out("[3/3] ✅ 解析成功！准备手动跳转。\n");
-            out("链接: " + url + "\n");
-            return url with 302 with confirm;
+            out("[3/3] ✅ 解析成功！1.5 秒后自动跳转...\n");
+            return url with 302;
         } else {
             out("❌ 酷狗解析失败。\n");
             return;
         }
         
-    // ================== 酷我音乐 (kw) ==================
+    // ------------------ 酷我音乐 (kw) ------------------
     } else if (cmd == "kw") {
         out("[1/2] 正在搜索并解析酷我音乐: " + kw + " ...\n");
         string parse_url = "https://oiapi.net/api/Kuwo?msg=" + encoded_kw + "&n=1&br=1";
@@ -206,9 +218,8 @@ auto main() {
             string song_name = json_str(parse_res, "$.data.song");
             string singer = json_str(parse_res, "$.data.singer");
             out("✅ 找到歌曲: " + song_name + " - " + singer + "\n");
-            out("[2/2] ✅ 解析成功！准备手动跳转。\n");
-            out("链接: " + url + "\n");
-            return url with 302 with confirm;
+            out("[2/2] ✅ 解析成功！1.5 秒后自动跳转...\n");
+            return url with 302;
         } else {
             out("❌ 酷我解析失败。\n");
             return;
