@@ -1,5 +1,3 @@
-// dsl: 14
-
 auto main() {
     string cmd = "";
     in(cmd);
