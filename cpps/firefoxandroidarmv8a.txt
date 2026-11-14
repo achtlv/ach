@@ -1,13 +1,25 @@
 auto main() {
-    string j = get("https://product-details.mozilla.org/1.0/mobile_versions.json")
-               with UA "CppScript/14";
+    string j = "";
+    
+    // 加入 try-catch 捕获超时或网络中断
+    try {
+        // 👇 核心修复：加上 with worker 绕过 CORS 限制
+        j = get("https://product-details.mozilla.org/1.0/mobile_versions.json")
+            with worker
+            with UA "CppScript/14";
+    } catch (e) {
+        out("❌ 获取版本信息失败：网络超时或被拦截。\n");
+        return with 502;
+    }
 
     if (status() != 200) {
+        out("❌ 获取版本信息失败，状态码: " + to_str(status()) + "\n");
         return with 502;
     }
 
     string ver = json_str(j, "$.version");
     if (ver == "") {
+        out("❌ 未能从返回的数据中解析到 version 字段。\n");
         return with 502;
     }
 
@@ -18,5 +30,6 @@ auto main() {
         "/android/fenix-" + ver + "-android-arm64-v8a/" +
         "fenix-" + ver + ".multi.android-arm64-v8a.apk";
 
+    // 成功获取到版本号后，直接 302 重定向去下载 APK
     return apk with 302;
 }
