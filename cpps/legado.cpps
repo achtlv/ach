@@ -42,7 +42,7 @@ auto main() {
     if (t == "" || k == "" || fid == "") { out("❌ [2/6] 参数提取失败。\n"); return; }
     out("✅ [2/6] 参数提取成功。\n");
 
-    // 3) 获取文件列表
+    // 3) 获取文件列表（带 3 次自动重试）
     out("[3/6] 正在获取文件列表...\n");
     string form = "lx=2&fid=" + fid + "&uid=" + uid + "&pg=1&rep=0&t=" + t + "&k=" + k + "&up=1&ls=1&puid=" + puid;
     string fileList = "";
@@ -70,10 +70,10 @@ auto main() {
     if (fileId == "") { out("❌ [3/6] 文件列表为空。\n"); return; }
     out("✅ [3/6] 找到最新文件。\n");
 
-    // 👇 加上延迟，防止频繁请求触发 WAF
+    // 延时防风控
     sleep(800);
 
-    // 4) 获取详情页（带重试）
+    // 4) 获取详情页（带 3 次自动重试）
     out("[4/6] 正在请求文件详情页...\n");
     string detailUrl = base + "/" + fileId;
     string page = "";
@@ -89,17 +89,15 @@ auto main() {
                        "Referer": share
                    }
                    with worker;
-            if (status() == 200 && contains(page, "iframe")) {
-                success4 = true; break;
-            }
+            if (status() == 200 && contains(page, "iframe")) { success4 = true; break; }
         } catch (e) {}
         retry4--;
         if (retry4 > 0) { out("⚠️ [4/6] 网络中断，重试中...\n"); sleep(1000); }
     }
-    if (!success4) { out("❌ [4/6] 获取详情页失败（可能被拦截或页面变更）。\n"); return; }
+    if (!success4) { out("❌ [4/6] 获取详情页失败。\n"); return; }
     out("✅ [4/6] 详情页获取成功。\n");
 
-    // 5) 获取 iframe（带重试）
+    // 5) 获取 iframe（带 3 次自动重试）
     string fn = regex(page, "src=\"(/fn\\?[^\"]+)\"");
     if (fn == "") { out("❌ [5/6] 未找到 iframe 链接。\n"); return; }
     
@@ -128,10 +126,9 @@ auto main() {
     if (wp_sign == "" || domain2 == "") { out("❌ [5/6] 无法提取解析参数。\n"); return; }
     if (ajaxdata == "") ajaxdata = "YiQi";
 
-    // 👇 再次延迟
     sleep(800);
 
-    // 6) 申请最终直链（带重试）
+    // 6) 申请最终直链（带 3 次自动重试）
     out("[6/6] 正在向 API 申请最终直链...\n");
     string postBody = "action=downprocess&websignkey=" + ajaxdata + "&signs=" + ajaxdata + "&sign=" + wp_sign + "&websign=&kd=0&ves=1";
     string dl = "";
@@ -161,9 +158,9 @@ auto main() {
     string directUrl = dom + "/file/" + path;
     directUrl = replace(directUrl, "&amp;", "&");
     
-    out("🎉 解析成功！\n");
-    out("🔗 直链: " + directUrl + "\n");
+    out("🎉 解析成功！1.5 秒后自动跳转到下载页...\n");
+    out("🔗 目标链接: " + directUrl + "\n");
     
-    // 手动确认跳转
-    return directUrl with 302 with confirm;
+    // 👇 恢复为自动跳转（去掉了 confirm）
+    return directUrl with 302;
 }
