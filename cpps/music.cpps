@@ -1,105 +1,223 @@
 // dsl: 14
 
 auto main() {
-    // 初始化变量，防止空输入导致 E36 未初始化报错
     string cmd = "";
-    string kw = "";
-    string word = "";
-    
-    // 从输入流读取第一个词作为命令
     in(cmd);
     
-    // 循环读取剩余的词，拼接到 kw 中，以支持带空格的歌名
-    while (true) {
-        word = "";
-        in(word);
-        if (word == "") {
-            break;
-        }
-        if (kw == "") {
-            kw = word;
-        } else {
-            kw = kw + " " + word;
-        }
+    if (cmd == "") {
+        out("欢迎使用音乐解析 CLI。\n支持: wy(网易云), qq(QQ音乐), kg(酷狗), kw(酷我)\n格式: wy 万能青年旅店\n");
+        return;
     }
     
-    // 校验参数
-    if (cmd == "" || kw == "") {
-        out("用法: 请通过输入流 (in) 提供参数，格式: <平台命令> <搜索词>\n");
-        out("示例: wy 晴天\n");
-        out("      qq 周杰伦 稻香\n");
+    // 循环拼接搜索词，支持带空格的完整歌名
+    string kw = "";
+    string part = "";
+    in(part);
+    while (part != "") {
+        if (kw == "") kw = part;
+        else kw = kw + " " + part;
+        
+        part = "__EOF__";
+        in(part);
+        if (part == "__EOF__") break;
+    }
+    
+    if (kw == "") {
+        out("❌ 未提供搜索词。\n");
         return;
     }
 
-    // URL 编码搜索词
     string encoded_kw = urlencode(kw);
-    
-    // 跨域代理（在纯前端环境下用于绕过 CORS，Worker 环境会自动忽略）
-    string proxy_url = "https://corsproxy.io/?";
 
+    // ================== 网易云 (wy) ==================
     if (cmd == "wy") {
-        // === 网易云解析 ===
-        out("正在搜索网易云: " + kw + " ...\n");
-        
+        out("[1/3] 正在搜索网易云: " + kw + " ...\n");
         string search_url = "https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=" + encoded_kw + "&count=1&pages=1";
-        string res = get(search_url) with proxy proxy_url;
+        string res = "";
+        try {
+            res = get(search_url) with worker;
+        } catch (e) {
+            out("❌ 网易云搜索超时或被拦截。\n");
+            return;
+        }
         
-        string id = regex(res, "\"id\":([0-9]+)");
-        
+        string id = regex(res, "\"id\":\"([a-zA-Z0-9]+)\"");
         if (id == "") {
-            out("未找到歌曲。\n");
+            out("❌ 未找到网易云歌曲。\n");
+            return;
+        }
+        string song_name = regex(res, "\"name\":\"([^\"]+)\"");
+        string artist = regex(res, "\"artist\":\\[\"([^\"]+)\"");
+        out("✅ 找到歌曲: " + song_name + " - " + artist + " (ID: " + id + ")\n");
+        
+        out("[2/3] 正在并发解析 320k 链接...\n");
+        string url1 = "https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=" + id + "&br=320";
+        string url2 = "https://yy.zddyr.top/lx/api/?source=wy&songmid=" + id + "&quality=320k";
+        
+        deque<string> req_urls;
+        req_urls.push_back(url1);
+        req_urls.push_back(url2);
+        deque<string> responses;
+        
+        try {
+            responses = get_all(req_urls, true);
+        } catch (e) {
+            out("❌ 网易云解析请求超时。\n");
             return;
         }
         
-        out("找到歌曲 ID: " + id + "，正在解析 320k...\n");
-        
-        string parse_url = "https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=" + id + "&br=320";
-        string parse_res = get(parse_url) with proxy proxy_url;
-        string url = json_str(parse_res, "$.url");
-        
-        // 备用接口：星海
-        if (url == "") {
-            string xy_url = "https://yy.zddyr.top/lx/api/?source=wy&songmid=" + id + "&quality=320k";
-            string xy_res = get(xy_url) with proxy proxy_url;
-            url = json_str(xy_res, "$.url");
+        if (responses.size() > 0) {
+            for (number i = 0; i < responses.size(); i++) {
+                string r = responses[i];
+                string u = json_str(r, "$.url");
+                if (u == "") {
+                    u = regex(r, "\"url\":\"([^\"]+)\"");
+                }
+                if (u != "") {
+                    u = replace(u, "\\/", "/");
+                    u = replace(u, "http://", "https://");
+                    out("[3/3] ✅ 解析成功！准备手动跳转。\n");
+                    out("链接: " + u + "\n");
+                    return u with 302 with confirm;
+                }
+            }
         }
+        out("❌ 网易云解析失败：所有接口均未返回有效链接。\n");
+        return;
         
-        if (url != "") {
-            out("✅ 320k 播放链接:\n" + url + "\n");
-        } else {
-            out("❌ 解析失败：该歌曲可能无 320k 免费版权。\n");
-        }
-        
+    // ================== QQ 音乐 (qq) ==================
     } else if (cmd == "qq") {
-        // === QQ 音乐解析 ===
-        out("正在搜索 QQ 音乐: " + kw + " ...\n");
-        
+        out("[1/3] 正在搜索 QQ 音乐: " + kw + " ...\n");
         string search_url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=" + encoded_kw + "&format=json&n=1&p=1&cr=1&aggr=1&flag_qc=0&remoteplace=txt.yqq.song&t=0&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0";
-        string res = get(search_url) with proxy proxy_url;
-        
-        string songmid = regex(res, "\"songmid\":\"([^\"]+)\"");
-        
-        if (songmid == "") {
-            out("未找到歌曲。\n");
+        string res = "";
+        try {
+            res = get(search_url) with worker;
+        } catch (e) {
+            out("❌ QQ音乐搜索超时。\n");
             return;
         }
         
-        out("找到 songmid: " + songmid + "，正在解析 320k...\n");
+        string songmid = regex(res, "\"songmid\":\"([a-zA-Z0-9]+)\"");
+        if (songmid == "") {
+            out("❌ 未找到 QQ 音乐歌曲。\n");
+            return;
+        }
+        string song_name = regex(res, "\"songname\":\"([^\"]+)\"");
+        string singer = regex(res, "\"singername\":\"([^\"]+)\"");
+        out("✅ 找到歌曲: " + song_name + " - " + singer + " (songmid: " + songmid + ")\n");
         
+        out("[2/3] 正在解析 320k 链接...\n");
         string parse_url = "https://lxmusicapi.onrender.com/url/tx/" + songmid + "/320k";
-        string parse_res = get(parse_url) with proxy proxy_url with header {
-            "X-Request-Key": "share-v3",
-            "User-Agent": "lx-music-desktop/2.10.0"
-        };
+        string parse_res = "";
+        try {
+            parse_res = get(parse_url) with worker with header {
+                "X-Request-Key": "share-v3",
+                "User-Agent": "lx-music-desktop/2.10.0"
+            };
+        } catch (e) {
+            out("❌ QQ音乐解析超时。\n");
+            return;
+        }
         
         string url = json_str(parse_res, "$.url");
+        string msg = json_str(parse_res, "$.msg");
+        
+        if (contains(url, "kuwo.cn") || contains(msg, "无法获取")) {
+            out("❌ QQ音乐解析失败：接口未返回有效链接。(错误信息: " + msg + ")\n");
+            return;
+        } else if (url != "") {
+            url = replace(url, "\\/", "/");
+            url = replace(url, "http://", "https://");
+            out("[3/3] ✅ 解析成功！准备手动跳转。\n");
+            out("链接: " + url + "\n");
+            return url with 302 with confirm;
+        } else {
+            out("❌ QQ音乐解析失败：返回数据中未找到 url。\n");
+            return;
+        }
+
+    // ================== 酷狗音乐 (kg) ==================
+    } else if (cmd == "kg") {
+        out("[1/3] 正在搜索酷狗音乐: " + kw + " ...\n");
+        string search_url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=" + encoded_kw + "&page=1&pagesize=1&showtype=1";
+        string res = "";
+        try {
+            res = get(search_url) with worker with header {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            };
+        } catch (e) {
+            out("❌ 酷狗搜索超时或被拦截。\n");
+            return;
+        }
+        
+        if (status() != 200) {
+            out("❌ 酷狗搜索失败，状态码: " + to_str(status()) + "\n");
+            return;
+        }
+        
+        string hash = regex(res, "\"hash\":\"([a-zA-Z0-9]+)\"");
+        if (hash == "") {
+            out("❌ 未找到酷狗歌曲，或接口返回异常。\n");
+            return;
+        }
+        string song_name = regex(res, "\"songname\":\"([^\"]+)\"");
+        string singer = regex(res, "\"singername\":\"([^\"]+)\"");
+        out("✅ 找到歌曲: " + song_name + " - " + singer + " (hash: " + hash + ")\n");
+        
+        out("[2/3] 正在解析 320k 链接...\n");
+        string parse_url = "https://yy.zddyr.top/lx/api/?source=kg&songmid=" + hash + "&quality=320k";
+        string parse_res = "";
+        try {
+            parse_res = get(parse_url) with worker;
+        } catch (e) {
+            out("❌ 酷狗解析超时。\n");
+            return;
+        }
+        
+        string url = regex(parse_res, "\"url\":\"([^\"]+)\"");
+        if (url != "") {
+            url = replace(url, "\\/", "/");
+            url = replace(url, "http://", "https://");
+            out("[3/3] ✅ 解析成功！准备手动跳转。\n");
+            out("链接: " + url + "\n");
+            return url with 302 with confirm;
+        } else {
+            out("❌ 酷狗解析失败。\n");
+            return;
+        }
+        
+    // ================== 酷我音乐 (kw) ==================
+    } else if (cmd == "kw") {
+        out("[1/2] 正在搜索并解析酷我音乐: " + kw + " ...\n");
+        string parse_url = "https://oiapi.net/api/Kuwo?msg=" + encoded_kw + "&n=1&br=1";
+        string parse_res = "";
+        try {
+            parse_res = get(parse_url) with worker;
+        } catch (e) {
+            out("❌ 酷我解析超时。\n");
+            return;
+        }
+        
+        string url = json_str(parse_res, "$.data.url");
+        if (url == "") url = json_str(parse_res, "$.data[0].url");
+        if (url == "") url = json_str(parse_res, "$.url");
         
         if (url != "") {
-            out("✅ 320k 播放链接:\n" + url + "\n");
+            url = replace(url, "\\/", "/");
+            url = replace(url, "http://", "https://");
+            string song_name = json_str(parse_res, "$.data.song");
+            string singer = json_str(parse_res, "$.data.singer");
+            out("✅ 找到歌曲: " + song_name + " - " + singer + "\n");
+            out("[2/2] ✅ 解析成功！准备手动跳转。\n");
+            out("链接: " + url + "\n");
+            return url with 302 with confirm;
         } else {
-            out("❌ 解析失败：接口限流或缺少版权。\n");
+            out("❌ 酷我解析失败。\n");
+            return;
         }
+        
     } else {
-        out("未知命令: " + cmd + "\n请使用 wy 或 qq\n");
+        out("❌ 未知命令: " + cmd + "\n支持的命令: wy, qq, kg, kw\n");
+        return;
     }
 }
