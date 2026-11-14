@@ -1,166 +1,35 @@
 auto main() {
-    string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-    string base = "https://miaogongzi.lanzout.com";
-    string share = base + "/b01rgkhhe";
-
-    out("[1/6] 正在请求分享页...\n");
-    string html = "";
+    string j = "";
+    
+    // 加入 try-catch 捕获超时或网络中断
     try {
-        html = get(share)
-               with UA userAgent
-               with header { 
-                   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                   "Sec-Fetch-Dest": "document",
-                   "Sec-Fetch-Mode": "navigate",
-                   "Sec-Fetch-Site": "none",
-                   "Upgrade-Insecure-Requests": "1"
-               }
-               with worker;
+        // 👇 核心修复：加上 with worker 绕过 CORS 限制
+        j = get("https://product-details.mozilla.org/1.0/mobile_versions.json")
+            with worker
+            with UA "CppScript/14";
     } catch (e) {
-        out("❌ [1/6] 分享页请求异常。\n");
-        return;
+        out("❌ 获取版本信息失败：网络超时或被拦截。\n");
+        return with 502;
     }
-    if (status() != 200) { out("❌ [1/6] 状态码异常。\n"); return; }
-    out("✅ [1/6] 分享页获取成功。\n");
 
-    // 2) 提取参数
-    string tVarName = regex(html, "'t'\\s*:\\s*([a-zA-Z0-9_]+)\\s*,");
-    string kVarName = regex(html, "'k'\\s*:\\s*([a-zA-Z0-9_]+)\\s*,");
-
-    string t = "";
-    string k = "";
-    if (tVarName != "") t = regex(html, tVarName + "\\s*=\\s*'([^']+)'");
-    if (kVarName != "") k = regex(html, kVarName + "\\s*=\\s*'([^']+)'");
-    if (t == "") t = regex(html, "var ibm0zt = '([^']+)'");
-    if (k == "") k = regex(html, "var _hkd1m = '([^']+)'");
-
-    string fid  = regex(html, "'fid'\\s*:\\s*([0-9]+)");
-    string uid  = regex(html, "'uid'\\s*:\\s*'([^']+)'");
-    string puid = regex(html, "'puid'\\s*:\\s*'([^']+)'");
-
-    if (t == "" || k == "" || fid == "") { out("❌ [2/6] 参数提取失败。\n"); return; }
-    out("✅ [2/6] 参数提取成功。\n");
-
-    // 3) 获取文件列表（带 3 次自动重试）
-    out("[3/6] 正在获取文件列表...\n");
-    string form = "lx=2&fid=" + fid + "&uid=" + uid + "&pg=1&rep=0&t=" + t + "&k=" + k + "&up=1&ls=1&puid=" + puid;
-    string fileList = "";
-    number retry3 = 3;
-    bool success3 = false;
-    
-    while (retry3 > 0) {
-        try {
-            fileList = post(base + "/filemoreajax.php?file=" + fid, form)
-                       with UA userAgent
-                       with header {
-                           "Content-Type": "application/x-www-form-urlencoded",
-                           "Referer": share,
-                           "X-Requested-With": "XMLHttpRequest"
-                       }
-                       with worker;
-            if (json_num(fileList, "$.zt") == 1) { success3 = true; break; }
-        } catch (e) {}
-        retry3--;
-        if (retry3 > 0) { out("⚠️ [3/6] 网络中断，重试中...\n"); sleep(1000); }
+    if (status() != 200) {
+        out("❌ 获取版本信息失败，状态码: " + to_str(status()) + "\n");
+        return with 502;
     }
-    if (!success3) { out("❌ [3/6] 获取文件列表失败。\n"); return; }
-    
-    string fileId = json_str(fileList, "$.text[0].id");
-    if (fileId == "") { out("❌ [3/6] 文件列表为空。\n"); return; }
-    out("✅ [3/6] 找到最新文件。\n");
 
-    // 延时防风控
-    sleep(800);
-
-    // 4) 获取详情页（带 3 次自动重试）
-    out("[4/6] 正在请求文件详情页...\n");
-    string detailUrl = base + "/" + fileId;
-    string page = "";
-    number retry4 = 3;
-    bool success4 = false;
-    
-    while (retry4 > 0) {
-        try {
-            page = get(detailUrl)
-                   with UA userAgent
-                   with header {
-                       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                       "Referer": share
-                   }
-                   with worker;
-            if (status() == 200 && contains(page, "iframe")) { success4 = true; break; }
-        } catch (e) {}
-        retry4--;
-        if (retry4 > 0) { out("⚠️ [4/6] 网络中断，重试中...\n"); sleep(1000); }
+    string ver = json_str(j, "$.version");
+    if (ver == "") {
+        out("❌ 未能从返回的数据中解析到 version 字段。\n");
+        return with 502;
     }
-    if (!success4) { out("❌ [4/6] 获取详情页失败。\n"); return; }
-    out("✅ [4/6] 详情页获取成功。\n");
 
-    // 5) 获取 iframe（带 3 次自动重试）
-    string fn = regex(page, "src=\"(/fn\\?[^\"]+)\"");
-    if (fn == "") { out("❌ [5/6] 未找到 iframe 链接。\n"); return; }
-    
-    out("[5/6] 正在请求验证页...\n");
-    string iframe = "";
-    number retry5 = 3;
-    bool success5 = false;
-    
-    while (retry5 > 0) {
-        try {
-            iframe = get(base + fn)
-                     with UA userAgent
-                     with header { "Referer": detailUrl }
-                     with worker;
-            if (status() == 200) { success5 = true; break; }
-        } catch (e) {}
-        retry5--;
-        if (retry5 > 0) { out("⚠️ [5/6] 网络中断，重试中...\n"); sleep(800); }
-    }
-    if (!success5) { out("❌ [5/6] 请求 iframe 失败。\n"); return; }
+    // 官方路径：
+    // /pub/fenix/releases/{ver}/android/fenix-{ver}-android-arm64-v8a/fenix-{ver}.multi.android-arm64-v8a.apk
+    string apk =
+        "https://archive.mozilla.org/pub/fenix/releases/" + ver +
+        "/android/fenix-" + ver + "-android-arm64-v8a/" +
+        "fenix-" + ver + ".multi.android-arm64-v8a.apk";
 
-    string wp_sign  = regex(iframe, "var wp_sign = '([^']+)'");
-    string ajaxdata = regex(iframe, "var ajaxdata = '([^']+)'");
-    string domain2  = regex(iframe, "var domain2 = '([^']+)'");
-    
-    if (wp_sign == "" || domain2 == "") { out("❌ [5/6] 无法提取解析参数。\n"); return; }
-    if (ajaxdata == "") ajaxdata = "YiQi";
-
-    sleep(800);
-
-    // 6) 申请最终直链（带 3 次自动重试）
-    out("[6/6] 正在向 API 申请最终直链...\n");
-    string postBody = "action=downprocess&websignkey=" + ajaxdata + "&signs=" + ajaxdata + "&sign=" + wp_sign + "&websign=&kd=0&ves=1";
-    string dl = "";
-    number retry6 = 3;
-    bool success6 = false;
-    
-    while (retry6 > 0) {
-        try {
-            dl = post(domain2, postBody)
-                 with UA userAgent
-                 with header {
-                     "Content-Type": "application/x-www-form-urlencoded",
-                     "Referer": base + "/"
-                 }
-                 with worker;
-            if (json_str(dl, "$.dom") != "") { success6 = true; break; }
-        } catch (e) {}
-        retry6--;
-        if (retry6 > 0) { out("⚠️ [6/6] 网络中断，重试中...\n"); sleep(1000); }
-    }
-    if (!success6) { out("❌ [6/6] 申请直链失败。\n"); return; }
-
-    string dom = json_str(dl, "$.dom");
-    string path = json_str(dl, "$.url");
-    if (dom == "" || path == "") { out("❌ [6/6] 返回数据异常。\n"); return; }
-
-    string directUrl = dom + "/file/" + path;
-    directUrl = replace(directUrl, "&amp;", "&");
-    
-    out("🎉 解析成功！1.5 秒后自动跳转到下载页...\n");
-    out("🔗 目标链接: " + directUrl + "\n");
-    
-    // 👇 恢复为自动跳转（去掉了 confirm）
-    return directUrl with 302;
+    // 成功获取到版本号后，直接 302 重定向去下载 APK
+    return apk with 302;
 }
